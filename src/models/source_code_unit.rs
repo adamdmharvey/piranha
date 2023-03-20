@@ -327,7 +327,7 @@ impl SourceCodeUnit {
     let mut edit: Edit = edit.clone();
     // Check if the edit is a `Delete` operation then delete trailing comma
     if edit.is_delete() {
-      edit = self.delete_trailing_comma(&edit);
+      edit = self.expand_deletion(&edit);
     }
     // Get the tree_sitter's input edit representation
     let (new_source_code, ts_edit) = get_tree_sitter_edit(self.code.clone(), &edit);
@@ -343,11 +343,11 @@ impl SourceCodeUnit {
       panic!("{}", msg);
     }
     // Check if the edit is a `Delete` operation then delete associated comment
-    if edit.is_delete() && *self.piranha_arguments().cleanup_comments() {
-      if let Some(deleted_comment) = self._delete_associated_comment(&edit, parser) {
-        return deleted_comment;
-      }
-    }
+    // if edit.is_delete() && *self.piranha_arguments().cleanup_comments() {
+    //   if let Some(deleted_comment) = self._delete_associated_comment(&edit, parser) {
+    //     return deleted_comment;
+    //   }
+    // }
     ts_edit
   }
 

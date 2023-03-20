@@ -15,9 +15,11 @@ use std::{collections::HashMap, fmt};
 
 use colored::Colorize;
 use getset::Getters;
+use itertools::Itertools;
 use log::{debug, trace};
 use serde_derive::{Deserialize, Serialize};
-use tree_sitter::{Node, Range};
+use tree_sitter::{Node, Range, InputEdit};
+use tree_sitter_traversal::{traverse, Order};
 
 use super::{
   matches::Match, rule::InstantiatedRule, rule_store::RuleStore, source_code_unit::SourceCodeUnit,
@@ -143,4 +145,169 @@ impl SourceCodeUnit {
         edit
       });
   }
+
+  pub(crate) fn expand_deletion(&self, delete_edit: &Edit) -> Edit {
+    let mut new_deleted_range = delete_edit.p_match().range();
+    let (next_nodes, prev_nodes) = self.get_nearby_nodes(delete_edit, 4);
+
+    let next_nodes = self.get_associated_next_nodes(delete_edit);
+
+
+    let mut is_comma_found = false;
+    for (range, kind, content) in next_nodes {
+      if content.trim().eq(",") {
+        is_comma_found |= true;
+        new_deleted_range.end_byte = range.end_byte;
+        new_deleted_range.end_point = range.end_point;
+      } else if self.is_comment(kind) && range.start_point.row ==  {
+        
+      }
+      
+      let is_comma = content.trim().eq(",");
+      if is_comma || self.is_comment(kind) {
+        is_comma_found |= is_comma;
+        new_deleted_range.end_byte = range.end_byte;
+        new_deleted_range.end_point = range.end_point;
+      } else {
+        break;
+      }
+    }
+
+    for (range, kind, content) in prev_nodes {
+      if self
+        .piranha_arguments()
+        .language()
+        .ignore_nodes_for_comments()
+        .contains(&kind.to_string())
+      {
+        break;
+      }
+      if self.is_comment(kind) {
+        new_deleted_range.start_byte = range.start_byte;
+        new_deleted_range.start_point = range.start_point;
+      } else {
+        break;
+      }
+    }
+    return Edit::new(
+      Match::new(
+        self.code()[new_deleted_range.start_byte..new_deleted_range.end_byte].to_string(),
+        new_deleted_range,
+        delete_edit.p_match().matches().clone(),
+      ),
+      delete_edit.replacement_string().to_string(),
+      delete_edit.matched_rule().to_string(),
+    );
+  }
+
+  fn get_parent_node(&self, range: Range) -> Option<Node> {
+    self
+      .root_node()
+      .descendant_for_byte_range(range.end_byte, range.end_byte + 1)
+      .and_then(|n| n.parent())
+  }
+
+
+  fn get_associated_next_nodes(&self, delete_edit: &Edit) -> Vec<(Range, &str, &str)> {
+    debug!("Looking up next node!");
+    let deleted_range: Range = delete_edit.p_match().range();
+
+    // Get the node immediately after the to-be-deleted code
+    if let Some(parent_node) = self.get_parent_node(deleted_range)
+    {
+      return traverse(parent_node.walk(), Order::Post)
+        .filter(|n| n.start_byte() > deleted_range.end_byte)
+        .sorted_by(|a, b| {
+          (a.start_byte() - deleted_range.end_byte).cmp(&(b.start_byte() - deleted_range.end_byte))
+        })
+        .map(|n| {
+          (
+            n.range(),
+            n.kind(),
+            n.utf8_text(self.code().as_bytes()).unwrap(),
+          )
+        })
+        .take_while(|(range, kind, content)| {
+          content.trim().eq(",") || (range.start_point.row == deleted_range.end_point.row && self.is_comment(kind))
+        })
+        .collect_vec();
+      
+    }
+    return vec![];
+  }
+
+
+  fn get_associated_previous_nodes(&self, delete_edit: &Edit) -> Vec<(Range, &str, &str)> {
+    debug!("Looking up next node!");
+    let deleted_range: Range = delete_edit.p_match().range();
+
+    // Get the node immediately after the to-be-deleted code
+    if let Some(parent_node) = self.get_parent_node(deleted_range)
+    {
+      return traverse(parent_node.walk(), Order::Post)
+      .filter(|n| n.end_byte() < deleted_range.start_byte)
+      .sorted_by(|a, b| {
+        (deleted_range.start_byte - a.end_byte()).cmp(&(deleted_range.start_byte - b.end_byte()))
+        })
+      .map(|n| {
+        (
+          n.range(),
+          n.kind(),
+          n.utf8_text(self.code().as_bytes()).unwrap(),
+        )
+      })
+        .take_while(|(range, kind, content)| {
+          // TODO: It is the only node.
+          content.trim().eq(",") || (self.is_comment(kind))
+        })
+        .collect_vec();
+      
+    }
+    return vec![];
+  }
+
+  // fn get_nearby_nodes(
+  //   &self, delete_edit: &Edit, buffer: usize,
+  // ) -> (Vec<(Range, &str, &str)>, Vec<(Range, &str, &str)>) {
+  //   debug!("Looking up next node!");
+  //   let deleted_range: Range = delete_edit.p_match().range();
+  //   print!("*** {:?} {:?}\n", deleted_range, delete_edit.p_match().matched_string());
+  //   // Get the node immediately after the to-be-deleted code
+  //   if let Some(parent_node) = self
+  //     .root_node()
+  //     .descendant_for_byte_range(deleted_range.end_byte, deleted_range.end_byte + 1)
+  //     .and_then(|n| n.parent())
+  //   {
+  //     let next_nodes = traverse(parent_node.walk(), Order::Post)
+  //       .filter(|n| n.start_byte() > deleted_range.end_byte)
+  //       .sorted_by(|a, b| {
+  //         (a.start_byte() - deleted_range.end_byte).cmp(&(b.start_byte() - deleted_range.end_byte))
+  //       })
+  //       .map(|n| {
+  //         (
+  //           n.range(),
+  //           n.kind(),
+  //           n.utf8_text(self.code().as_bytes()).unwrap(),
+  //         )
+  //       })
+  //       .take(buffer)
+  //       .collect_vec();
+  //     let previous_nodes = traverse(parent_node.walk(), Order::Post)
+  //       .filter(|n| n.end_byte() < deleted_range.start_byte)
+  //       .sorted_by(|a, b| {
+  //         (deleted_range.start_byte - a.end_byte()).cmp(&(deleted_range.start_byte - b.end_byte()))
+  //       })
+  //       .map(|n| {
+  //         (
+  //           n.range(),
+  //           n.kind(),
+  //           n.utf8_text(self.code().as_bytes()).unwrap(),
+  //         )
+  //       })
+  //       .take(buffer)
+  //       .collect_vec();
+  //     return (next_nodes, previous_nodes);
+  //   }
+  //   (vec![], vec![])
+  // }
 }
