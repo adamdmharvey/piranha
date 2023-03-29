@@ -16,7 +16,7 @@ use std::{fs, time::Instant};
 
 use log::{debug, info};
 use polyglot_piranha::{
-  execute_piranha, models::piranha_arguments::PiranhaArguments,
+  execute_feature_flag_cleanup, models::piranha_arguments::PiranhaArguments,
   models::piranha_output::PiranhaOutputSummary,
 };
 
@@ -29,10 +29,10 @@ fn main() {
   let args = PiranhaArguments::from_cli();
 
   debug!("Piranha Arguments are \n{:#?}", args);
-  let piranha_output_summaries = execute_piranha(&args);
+  let piranha_output_summaries = execute_feature_flag_cleanup(&args);
 
   if let Some(path) = args.path_to_output_summary() {
-    write_output_summary(piranha_output_summaries, path);
+    write_output_summary(&piranha_output_summaries, path);
   }
 
   info!("Time elapsed - {:?}", now.elapsed().as_secs());
@@ -40,9 +40,9 @@ fn main() {
 
 /// Writes the output summaries to a Json file named `path_to_output_summaries` .
 fn write_output_summary(
-  piranha_output_summaries: Vec<PiranhaOutputSummary>, path_to_json: &String,
+  piranha_output_summaries: &Vec<PiranhaOutputSummary>, path_to_json: &String,
 ) {
-  if let Ok(contents) = serde_json::to_string_pretty(&piranha_output_summaries) {
+  if let Ok(contents) = serde_json::to_string_pretty(piranha_output_summaries) {
     if fs::write(path_to_json, contents).is_ok() {
       return;
     }

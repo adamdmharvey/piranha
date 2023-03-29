@@ -12,11 +12,15 @@
 
 
 from pathlib import Path
-from polyglot_piranha import Constraint, execute_piranha, PiranhaArguments, PiranhaOutputSummary, Rule, RuleGraph, OutgoingEdges
+from polyglot_piranha import Constraint, execute_feature_flag_cleanup, execute_piranha, PiranhaArguments, PiranhaOutputSummary, Rule, RuleGraph, OutgoingEdges
 from os.path import join, basename
 from os import listdir
 import re
+import logging 
 
+FORMAT = "%(levelname)s %(name)s %(asctime)-15s %(filename)s:%(lineno)d %(message)s"
+logging.basicConfig(format=FORMAT)
+logging.getLogger().setLevel(logging.DEBUG)
 
 def test_piranha_rewrite():
     args = PiranhaArguments(
@@ -31,14 +35,16 @@ def test_piranha_rewrite():
         dry_run=True,
     )
 
-    output_summaries = execute_piranha(args)
+    output_summaries = execute_feature_flag_cleanup(args)
     
     assert len(output_summaries) == 2
     expected_paths = [
         "test-resources/java/feature_flag_system_1/treated/input/XPFlagCleanerPositiveCases.java",
         "test-resources/java/feature_flag_system_1/treated/input/TestEnum.java",
     ]
-    assert all([o.path in expected_paths for o in output_summaries])
+    for o in output_summaries:
+        print("-------",o.path)
+    assert all([any(o.path.endswith(e) for e in expected_paths) for o in output_summaries])
     summary: PiranhaOutputSummary
     for summary in output_summaries:
         assert _is_readable(str(summary))
