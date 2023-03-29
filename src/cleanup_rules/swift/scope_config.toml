@@ -41,7 +41,6 @@ generator = """(
     (#eq? @parameters "@params")
 )"""
 
-
 [[scopes]]
 name = "File"
 [[scopes.rules]]
